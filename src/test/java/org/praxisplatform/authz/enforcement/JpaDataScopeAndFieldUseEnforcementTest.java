@@ -54,7 +54,7 @@ class JpaDataScopeAndFieldUseEnforcementTest {
                 "resource.dependenteCpf",
                 "ergon.dependentes.cpf",
                 FactValueType.STRING,
-                Set.of(SearchPredicateOperator.EQ, SearchPredicateOperator.IS_NOT_NULL),
+                Set.of(SearchPredicateOperator.EQ, SearchPredicateOperator.IS_NULL, SearchPredicateOperator.IS_NOT_NULL),
                 false
         );
 
@@ -280,6 +280,68 @@ class JpaDataScopeAndFieldUseEnforcementTest {
                 nullSubqueryPlan, "e.tenantId = :hardTenantId", Map.of("hardTenantId", "gov-sp"), tenantHardScope);
         assertTrue(nullSubCrit.policyWhereClause().contains(
                 "EXISTS (SELECT 1 FROM human-resources.afastamentos sub WHERE sub.parentId = e.id AND (sub.dependentes.cpf IS NOT NULL))"));
+
+        // C-03a: Negated ComparisonPredicateIr and NullabilityPredicateIr on CORRELATED_EXISTS_SUBQUERY
+        // must push negation OUTSIDE EXISTS -> NOT EXISTS (never EXISTS (... <> ...)).
+        LogicalPredicateIr notDepComp = new LogicalPredicateIr(
+                SearchPredicateOperator.NOT,
+                List.of(new ComparisonPredicateIr(
+                        SearchPredicateOperator.EQ,
+                        "resource.dependenteCpf",
+                        "ergon.dependentes.cpf",
+                        FactValueType.STRING,
+                        new LiteralOperandIr("99999999999"),
+                        false
+                ))
+        );
+        DataScopePlan notDepCompPlan = new DataScopePlan(
+                DataScopePlan.FORMAT_V1,
+                "plan-not-dep-comp",
+                "resource-operation/human-resources.afastamentos/filter",
+                "human-resources.afastamentos",
+                "rev-1",
+                qpDigest,
+                qpDigest,
+                projection.projectionId(),
+                qpDigest,
+                DataScopeOutcome.FILTER,
+                PushdownMode.FULL_PUSHDOWN,
+                notDepComp
+        );
+        CompiledDataScopeCriterion notDepCompCrit = adapter.compile(
+                notDepCompPlan, "e.tenantId = :hardTenantId", Map.of("hardTenantId", "gov-sp"), tenantHardScope);
+        assertTrue(notDepCompCrit.policyWhereClause().startsWith("NOT EXISTS (SELECT 1 FROM human-resources.afastamentos sub"),
+                "Negated 1:N comparison must translate to NOT EXISTS");
+        assertTrue(notDepCompCrit.policyWhereClause().contains("sub.dependentes.cpf = :dspParam1"),
+                "Inner comparison of NOT EXISTS must stay unnegated (=)");
+
+        LogicalPredicateIr notDepNull = new LogicalPredicateIr(
+                SearchPredicateOperator.NOT,
+                List.of(new org.praxisplatform.authz.contracts.datascope.NullabilityPredicateIr(
+                        SearchPredicateOperator.IS_NULL,
+                        "resource.dependenteCpf",
+                        "ergon.dependentes.cpf"
+                ))
+        );
+        DataScopePlan notDepNullPlan = new DataScopePlan(
+                DataScopePlan.FORMAT_V1,
+                "plan-not-dep-null",
+                "resource-operation/human-resources.afastamentos/filter",
+                "human-resources.afastamentos",
+                "rev-1",
+                qpDigest,
+                qpDigest,
+                projection.projectionId(),
+                qpDigest,
+                DataScopeOutcome.FILTER,
+                PushdownMode.FULL_PUSHDOWN,
+                notDepNull
+        );
+        CompiledDataScopeCriterion notDepNullCrit = adapter.compile(
+                notDepNullPlan, "e.tenantId = :hardTenantId", Map.of("hardTenantId", "gov-sp"), tenantHardScope);
+        assertEquals(
+                "NOT EXISTS (SELECT 1 FROM human-resources.afastamentos sub WHERE sub.parentId = e.id AND (sub.dependentes.cpf IS NULL))",
+                notDepNullCrit.policyWhereClause());
     }
 
     @Test

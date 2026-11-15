@@ -193,16 +193,19 @@ public final class JpaDataScopeAdapter {
         }
         if (node instanceof NullabilityPredicateIr nullability) {
             QueryAdapterFieldBinding binding = requireBinding(nullability.fieldPath());
-            String col = binding.traversalStrategy() == RelationTraversalStrategy.CORRELATED_EXISTS_SUBQUERY
-                    ? "sub." + binding.nativeJpaPath()
-                    : "e." + binding.nativeJpaPath();
-            boolean isNullOp = (nullability.operator() == SearchPredicateOperator.IS_NULL) ^ negatedContext;
-            String nullCond = isNullOp ? "(" + col + " IS NULL)" : "(" + col + " IS NOT NULL)";
             if (binding.traversalStrategy() == RelationTraversalStrategy.CORRELATED_EXISTS_SUBQUERY) {
-                return "EXISTS (SELECT 1 FROM " + binding.resourceKey() + " sub WHERE sub.parentId = e.id AND "
+                // Under Kleene 3VL on 1:N bags, existential negation applies outside EXISTS (NOT EXISTS)
+                // rather than inverting IS_NULL/IS_NOT_NULL inside EXISTS.
+                String col = "sub." + binding.nativeJpaPath();
+                boolean isNullOp = nullability.operator() == SearchPredicateOperator.IS_NULL;
+                String nullCond = isNullOp ? "(" + col + " IS NULL)" : "(" + col + " IS NOT NULL)";
+                return (negatedContext ? "NOT EXISTS" : "EXISTS")
+                        + " (SELECT 1 FROM " + binding.resourceKey() + " sub WHERE sub.parentId = e.id AND "
                         + nullCond + ")";
             }
-            return nullCond;
+            String col = "e." + binding.nativeJpaPath();
+            boolean isNullOp = (nullability.operator() == SearchPredicateOperator.IS_NULL) ^ negatedContext;
+            return isNullOp ? "(" + col + " IS NULL)" : "(" + col + " IS NOT NULL)";
         }
         if (node instanceof ComparisonPredicateIr comp) {
             return translateComparison(comp, negatedContext, params, paramCounter);
@@ -217,7 +220,11 @@ public final class JpaDataScopeAdapter {
             int[] paramCounter
     ) {
         QueryAdapterFieldBinding binding = requireBinding(comp.fieldPath());
-        String col = binding.traversalStrategy() == RelationTraversalStrategy.CORRELATED_EXISTS_SUBQUERY
+        boolean isCorrelatedExists = binding.traversalStrategy() == RelationTraversalStrategy.CORRELATED_EXISTS_SUBQUERY;
+        // For 1:N correlated subqueries, negation applies externally as NOT EXISTS rather than
+        // inverting the inner operator inside EXISTS (NOT EXISTS(a = x) != EXISTS(a <> x)).
+        boolean innerNegated = !isCorrelatedExists && negated;
+        String col = isCorrelatedExists
                 ? "sub." + binding.nativeJpaPath()
                 : "e." + binding.nativeJpaPath();
 
@@ -248,15 +255,15 @@ public final class JpaDataScopeAdapter {
         }
 
         String opSql = switch (comp.operator()) {
-            case EQ -> negated ? "<>" : "=";
-            case NE -> negated ? "=" : "<>";
-            case LT -> negated ? ">=" : "<";
-            case LTE -> negated ? ">" : "<=";
-            case GT -> negated ? "<=" : ">";
-            case GTE -> negated ? "<" : ">=";
-            case IN -> negated ? "NOT IN" : "IN";
-            case NIN -> negated ? "IN" : "NOT IN";
-            case TEXT_CONTAINS, STARTS_WITH, ENDS_WITH -> (negated ? "NOT LIKE" : "LIKE");
+            case EQ -> innerNegated ? "<>" : "=";
+            case NE -> innerNegated ? "=" : "<>";
+            case LT -> innerNegated ? ">=" : "<";
+            case LTE -> innerNegated ? ">" : "<=";
+            case GT -> innerNegated ? "<=" : ">";
+            case GTE -> innerNegated ? "<" : ">=";
+            case IN -> innerNegated ? "NOT IN" : "IN";
+            case NIN -> innerNegated ? "IN" : "NOT IN";
+            case TEXT_CONTAINS, STARTS_WITH, ENDS_WITH -> (innerNegated ? "NOT LIKE" : "LIKE");
             default -> throw new IllegalStateException("Unexpected comparison operator: " + comp.operator());
         };
 
@@ -282,10 +289,11 @@ public final class JpaDataScopeAdapter {
                 ? "(" + baseComparison + ")"
                 : "(" + nullGuard + " AND " + baseComparison + ")";
 
-        if (binding.traversalStrategy() == RelationTraversalStrategy.CORRELATED_EXISTS_SUBQUERY) {
-            // DSP-SQL-004 (P06 / P07): Use correlated EXISTS subquery for 1:N relations so root rows
-            // are never duplicated and count/pagination remain exact.
-            return "EXISTS (SELECT 1 FROM " + binding.resourceKey() + " sub WHERE sub.parentId = e.id AND "
+        if (isCorrelatedExists) {
+            // DSP-SQL-004 (P06 / P07): Use correlated EXISTS / NOT EXISTS subquery for 1:N relations
+            // so root rows are never duplicated and existential negation remains exact.
+            return (negated ? "NOT EXISTS" : "EXISTS")
+                    + " (SELECT 1 FROM " + binding.resourceKey() + " sub WHERE sub.parentId = e.id AND "
                     + nullSafeComparison + ")";
         }
         return nullSafeComparison;

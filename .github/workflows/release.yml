@@ -112,6 +112,17 @@ jobs:
           RELEASE_INPUT_VERSION: ${{ inputs.version }}
           RELEASE_INPUT_BUMP: ${{ inputs.bump }}
           RELEASE_INPUT_PREID: ${{ inputs.preid }}
+      - name: Verify upstream dependencies on Maven Central
+        shell: bash
+        run: |
+          set -euo pipefail
+          version='${{ steps.version.outputs.value }}'
+          url="https://repo1.maven.org/maven2/io/github/codexrodrigues/praxis-authz-contracts/${version}/praxis-authz-contracts-${version}.pom"
+          code="$(curl -L -sS -o /dev/null -w '%{http_code}' "$url")"
+          [[ "$code" == '200' ]] || {
+            echo "::error::Upstream artifact praxis-authz-contracts:${version} is not available on Maven Central yet (HTTP ${code}: ${url})."
+            exit 1
+          }
       - name: Persist version and push tag atomically
         shell: bash
         run: |

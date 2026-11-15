@@ -40,7 +40,7 @@
         <maven.compiler.target>21</maven.compiler.target>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <praxis-authz-contracts.version>0.1.0-beta.1-SNAPSHOT</praxis-authz-contracts.version>
+        <praxis-authz.version>${project.version}</praxis-authz.version>
         <jackson.version>2.18.2</jackson.version>
         <junit.version>5.11.4</junit.version>
     </properties>
@@ -49,7 +49,7 @@
         <dependency>
             <groupId>io.github.codexrodrigues</groupId>
             <artifactId>praxis-authz-contracts</artifactId>
-            <version>${praxis-authz-contracts.version}</version>
+            <version>${praxis-authz.version}</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -95,6 +95,10 @@
                                 <requireMavenVersion>
                                     <version>[3.9.0,)</version>
                                 </requireMavenVersion>
+                                <requireReleaseDeps>
+                                    <onlyWhenRelease>true</onlyWhenRelease>
+                                    <message>Release builds of praxis-authz-enforcement-core cannot depend on -SNAPSHOT artifacts.</message>
+                                </requireReleaseDeps>
                                 <bannedDependencies>
                                     <searchTransitive>true</searchTransitive>
                                     <excludes>
