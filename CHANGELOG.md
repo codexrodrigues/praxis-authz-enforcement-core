@@ -1,17 +1,16 @@
-# Changelog
+# Histórico de Alterações (Changelog)
 
-All notable changes to `praxis-authz-enforcement-core` are documented in this file.
+Todas as mudanças relevantes de `praxis-authz-enforcement-core` são documentadas neste arquivo.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+O formato segue o padrão [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), e este projeto adere ao [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.0-beta.1] - 2026-11-15
 
-### Added
-- Initial Maven Central beta publication of `io.github.codexrodrigues:praxis-authz-enforcement-core:0.1.0-beta.1`.
-- Complete 15-step authorization enforcement runtime (`EnforcementPipelineExecutor`, `HostDecisionNormalizationEngine`, `AuthorizationProviderPort`) implementing `executeTargetPipeline(...)` and `executeSearchPipeline(...)`.
-- Zero-trust header guard (`UntrustedRequestHeaderGuard`) and 4-stage context composition coordinator (`ContextCompositionCoordinator`, `ScopedExecutionContextHolder`).
-- Pre-hydration `DtoWriteIntentExtractor` and `DualScopeDelegationSpec`-aware `FieldWriteAuthorizer`.
-- Inference-channel guard (`FieldUseQueryGuard`) across `FILTER`, `SORT`, `GROUP`, `AGGREGATE`, and `JOIN`.
-- Kleene 3VL-safe `JpaDataScopeAdapter` with De Morgan NNF pushdown, correlated `EXISTS`/`NOT EXISTS` subqueries, escaped `LIKE` predicates, case-insensitive `LOWER(...)` alignment, and mandatory `AND` composition with host `hardScope`.
-- Non-mutating `DetachedDtoMaskingProcessor` and barrier-scoped `ObligationBarrierCoordinator`.
-- Reproducible Maven release build with `flatten-maven-plugin` (`oss`), GPG signing, and Maven Enforcer rules banning Spring Boot and Hibernate ORM runtime dependencies.
+### Adicionado
+- Publicação beta inicial no Maven Central de `io.github.codexrodrigues:praxis-authz-enforcement-core:0.1.0-beta.1`.
+- Orquestrador PEP determinístico de 15 etapas (`EnforcementPipelineExecutor`, `HostDecisionNormalizationEngine`, `executeTargetPipeline(...)` e `executeSearchPipeline(...)`) operando sem Spring Boot ou Hibernate ORM.
+- Subsistemas de contexto e anti-spoofing (`UntrustedRequestHeaderGuard`, `ContextCompositionCoordinator` em 4 estágios `EXTRACT -> ENRICH -> DERIVE -> FREEZE`, `ScopedExecutionContextHolder` com limpeza via `try-with-resources`).
+- Proteção pré-hidratação de escrita e consulta (`DtoWriteIntentExtractor`, `FieldWriteAuthorizer`, `DualScopeDelegationSpec`, `FieldUseQueryGuard` para `FILTER`, `SORT`, `GROUP`, `AGGREGATE` e `JOIN`).
+- Compilador JPQL Kleene 3VL (`JpaDataScopeAdapter`, `CompiledDataScopeCriterion.composedWhereClause()`) com Forma Normal Negativa (De Morgan), subqueries correlacionadas `EXISTS`/`NOT EXISTS`, escape de `LIKE ... ESCAPE '\'` e conjunção obrigatória com `hardScope`.
+- Processador desconectado de mascaramento (`DetachedDtoMaskingProcessor.projectAndMask(...)`) garantindo dominância de `FIELD_USE(VALUE)=DENY` sobre o lattice de 7 estratégias.
+- Coordenador de barreiras de obrigações (`ObligationBarrierCoordinator`, `TransactionalAuditOutboxPort`) e empacotamento Maven com regras `requireReleaseDeps` e bloqueio de `org.springframework.boot:*` e `org.hibernate.orm:*`.

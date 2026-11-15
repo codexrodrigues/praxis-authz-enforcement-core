@@ -1,25 +1,26 @@
-# Security Policy
+# Política de Segurança (`praxis-authz-enforcement-core`)
 
-`praxis-authz-enforcement-core` implements the 15-step Policy Enforcement Point (`STEP_01..STEP_15`) responsible for header anti-spoofing, pre-hydration write authorization, query side-channel prevention, SQL data-scope pushdown, obligation barriers, and detached DTO masking.
+`praxis-authz-enforcement-core` implementa o pipeline PEP de 15 etapas, guarda anti-spoofing de headers HTTP, análise pré-hidratação de `WriteIntent`, validação de `FIELD_USE`, compilação JPQL Kleene 3VL e mascaramento em projeções desconectadas para a **Praxis Authorization Decision Platform**. Defeitos com impacto de segurança devem ser tratados de forma responsável e privada.
 
-## Reporting a Vulnerability
+## Reportando uma Vulnerabilidade
 
-Do **not** open public issues with exploit payloads, credential material, or confidential tenant data.
+**Não** abra issues públicas no GitHub contendo payloads de exploração, dados reais de clientes, segredos HMAC ou detalhes de contorno antes de a correção ser publicada.
 
-Report vulnerabilities privately to the maintainer through GitHub Security Advisories (`codexrodrigues/praxis-authz-enforcement-core`) and provide:
+Comunique vulnerabilidades em canal privado via **GitHub Security Advisories** (`codexrodrigues/praxis-authz-enforcement-core`), informando:
 
-- Affected version or commit;
-- Affected component (`UntrustedRequestHeaderGuard`, `JpaDataScopeAdapter`, `DtoWriteIntentExtractor`, `DetachedDtoMaskingProcessor`, `EnforcementPipelineExecutor`, etc.);
-- Steps to reproduce without real credentials or secrets;
-- Security impact assessment (e.g., tenant scope bypass, `LIKE` wildcard injection, Kleene 3VL false match, or unmasked disclosure).
+- Versão, tag ou commit afetado;
+- Subsistema envolvido (`context`, `writeintent`, `fielduse`, `jpa`, `masking`, `obligation` ou `pipeline`);
+- Passos mínimos de reprodução sem credenciais ou registros reais;
+- Impacto de segurança observado (ex.: spoofing de `x-authz-*`, bypass de `FIELD_WRITE` ou `AUTHZ_UNMAPPED_WRITE_WIRE_PATH`, falha em `EXISTS`/`NOT EXISTS` no pushdown JPQL, vazamento de valor sem máscara ou quebra de barreira `ObligationBarrierCoordinator`).
 
-## Fail-Closed Security Guarantees
+## Invariantes de Segurança por Design
 
-- **Header Anti-Spoofing (`P01`, `P42`, `P61`):** `UntrustedRequestHeaderGuard` rejects `x-authz-*`, `x-praxis-authz-*`, `x-bypass-*`, and `x-workflow-*` unconditionally and permits organization headers only to narrow already `PRESENT` server-side `subject.*` facts;
-- **Pre-Hydration Write Custody (`P13`, `P14`, `P45`):** `DtoWriteIntentExtractor` fails closed on unmapped keys (`AUTHZ_UNMAPPED_WRITE_WIRE_PATH`), and `FieldWriteAuthorizer` checks `STEP_11` before business rules/persistence run;
-- **Mandatory Hard Scope & De Morgan NNF (`P05`, `P06`, `P24`):** `JpaDataScopeAdapter` always composes host `hardScope` via `AND`, escapes `LIKE` literals, and handles Kleene `UNKNOWN` safely;
-- **Obligation Barrier Revocation (`P21`, `P22`):** Any unfulfilled or conflicting obligation converts `PERMIT` to `DENY`.
+- **Guarda Anti-Spoofing (`UntrustedRequestHeaderGuard`):** Rejeita headers `x-authz-*`, `x-praxis-authz-*`, `x-bypass-*` e `x-workflow-*` vindos de origem não confiável antes do PDP;
+- **Ordem Imutável Pré-Hidratação (`STEP_11` antes de `STEP_12`):** `DtoWriteIntentExtractor` e `FieldWriteAuthorizer` validam `SET`/`CLEAR_EXPLICIT_NULL`/`REMOVE` e custódia `DualScopeDelegationSpec` antes que o serviço hidrate a entidade ou acione `PraxisRulesEngine`;
+- **Semântica JPQL Segura com `hardScope`:** `JpaDataScopeAdapter` aplica NNF (De Morgan) e jamais remove o `hardScope` do host mesmo em `DataScopeOutcome.ALL`;
+- **Mascaramento Desconectado (`STEP_15`):** `DetachedDtoMaskingProcessor` atua somente em projeções desconectadas sem risco de *dirty-checking* JPA, mantendo `FIELD_USE(VALUE)=DENY` dominante.
 
-## Credential Hygiene
+## Higiene de Credenciais e Releases
 
-Never commit HMAC secrets, GPG keys, PATs, or Maven Central tokens. Releases are signed exclusively inside GitHub Actions using protected secrets (see [RELEASING.md](RELEASING.md)).
+- Nunca comite tokens Maven Central, PATs, chaves GPG ou segredos HMAC reais;
+- Releases oficiais aguardam `praxis-authz-contracts` e ocorrem exclusivamente em CI conforme [RELEASING.md](RELEASING.md).
