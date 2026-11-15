@@ -18,12 +18,18 @@ Deterministic **15-step Policy Enforcement Point (PEP)** runtime for the **Praxi
 
 ---
 
-## Position in the Praxis Decision Platform
+## Praxis Decision Platform & Architectural Thesis
 
-The **Praxis Platform** describes resources, rules, actions, data, and policies once so they can be operated safely across traditional UIs, generative interfaces, AI agents, and backend integrations. Within this architecture:
+The **Praxis Platform** is a **semantically oriented platform for AI-native enterprise applications**, in which **resources, rules, actions, data, and policies are described once** and operated uniformly by **traditional UIs, generative UIs, AI agents, and integrations** — building applications that are legible and operable by AI by design rather than bolting AI onto the side.
 
-- `decisionKind = BUSINESS` (invariants, eligibility, calculations) is evaluated by [`praxis-rules-engine`](https://github.com/codexrodrigues/praxis-rules-engine) during server hydration/validation (**Step 12**);
-- `decisionKind = AUTHORIZATION` (`ACCESS`, `DATA_SCOPE`, `FIELD_USE`, `FIELD_WRITE`, `MASK`, `OBLIGATIONS`) is enforced deterministically before and after Step 12 by **`praxis-authz-enforcement-core`** (`STEP_01..STEP_11` and `STEP_13..STEP_15`).
+Within the Praxis Decision Platform, `decisionKind = BUSINESS` and `decisionKind = AUTHORIZATION` are strictly orthogonal planes:
+
+| Plane | Canonical Owner | Responsibilities |
+| :--- | :--- | :--- |
+| **Resource & Domain Semantics** | [`praxis-metadata-starter`](https://github.com/codexrodrigues/praxis-metadata-starter) | `@ApiResource`, `x-ui`, `/schemas/filtered`, `/schemas/domain`, `@DomainGovernance`, `@DomainLineage`, `@Filterable`, `@WorkflowAction`, `@UiSurface`, stats, and export |
+| **Control Plane & Governed Decisions** | [`praxis-config-starter`](https://github.com/codexrodrigues/praxis-config-starter) / [`praxis-config-contracts`](https://github.com/codexrodrigues/praxis-config-contracts) | UI config, AI registry, API catalog grounding, maker-checker approvals, and snapshot head lifecycle (`/api/praxis/config/**`) |
+| **`decisionKind = BUSINESS`** | [`praxis-rules-engine`](https://github.com/codexrodrigues/praxis-rules-engine) | Deterministic 5-state domain invariants, eligibility, and calculations evaluated during server hydration/validation (**Step 12**) |
+| **`decisionKind = AUTHORIZATION`** | [`contracts`](https://github.com/codexrodrigues/praxis-authz-contracts) -> **`praxis-authz-enforcement-core`** -> [`opa`](https://github.com/codexrodrigues/praxis-authz-opa) -> [`starter`](https://github.com/codexrodrigues/praxis-authz-starter) | Deterministic 15-step PEP runtime (`STEP_01..STEP_11` before rules; `STEP_13..STEP_15` post-hydration/disclosure) |
 
 **Module Boundary Guarantee:** `maven-enforcer-plugin` bans `org.springframework.boot:*` and `org.hibernate.orm:*` from the transitive runtime dependency tree. All OPA transport concerns remain behind `AuthorizationProviderPort`, and JPA entity persistence remains isolated in host adapters.
 
@@ -134,7 +140,7 @@ CompiledDataScopeCriterion criterion = scopeAdapter.compile(
         Map.of("__praxis_hard_tenant_id", callerTenantId),
         rowFacts -> Objects.equals(callerTenantId, rowFacts.get("tenantId").value())
 );
-// criterion.jpqlWhereClause() composes "(hardScope) AND (NNF dataScope predicate)" safely
+// criterion.composedWhereClause() composes "(hardScope) AND (NNF dataScope predicate)" safely
 ```
 
 ### 3. Detached DTO Masking (`DetachedDtoMaskingProcessor`)
