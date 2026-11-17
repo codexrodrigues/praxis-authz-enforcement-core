@@ -12,7 +12,7 @@ import java.util.Objects;
  * @param resourceKey canonical resource key
  * @param fieldPath canonical {@code resource.*} fact path
  * @param attributeId canonical {@code @DomainLineage.attributeId}
- * @param nativeJpaPath physical JPA attribute path (e.g. {@code vinculo.lotacao.id})
+ * @param nativeJpaPath physical JPA attribute path (e.g. {@code assignment.department.id})
  * @param traversalStrategy traversal strategy ({@code DIRECT_ATTRIBUTE}, {@code INNER_JOIN_SCALAR}, or {@code CORRELATED_EXISTS_SUBQUERY})
  * @param nullableColumn whether the underlying database column or join path is nullable
  */

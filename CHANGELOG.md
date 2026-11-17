@@ -4,6 +4,12 @@ Todas as mudanças relevantes de `praxis-authz-enforcement-core` são documentad
 
 O formato segue o padrão [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), e este projeto adere ao [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Alterado
+- `FieldWriteAuthorizer`: suporte completo aos modos neutros de `DualScopeDelegationSpec` (`ORIGIN_DESTINATION_SPLIT`, `ORIGIN_ONLY_WRITE`, `READ_ONLY_DESTINATION`) preservando compatibilidade com os aliases legados, além de parâmetros e Javadocs neutralizados em `FieldWriteAuthorizer` e `EnforcementPipelineExecutor`.
+- `UntrustedRequestHeaderGuard`: adiciona o cabeçalho `"x-delegated-destination-org-ids"` mapeado para `"subject.delegatedDestinationOrgIds"`, mantendo compatibilidade retroativa com `"x-delegated-cessionario-org-ids"`.
+
 ## [0.1.0-beta.1] - 2026-11-15
 
 ### Adicionado

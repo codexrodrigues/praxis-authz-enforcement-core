@@ -38,7 +38,6 @@ import org.praxisplatform.authz.contracts.context.FactValueType;
 import org.praxisplatform.authz.contracts.context.ProviderInputProjection;
 import org.praxisplatform.authz.contracts.context.ResolvedFactValue;
 import org.praxisplatform.authz.contracts.context.TemporalContext;
-import org.praxisplatform.authz.contracts.datascope.DataScopePlan;
 import org.praxisplatform.authz.contracts.decisionpoint.DecisionPointIdentity;
 import org.praxisplatform.authz.contracts.decisionpoint.DecisionPointRef;
 import org.praxisplatform.authz.contracts.decisionpoint.EnforcementCapability;
@@ -56,6 +55,7 @@ import org.praxisplatform.authz.contracts.envelope.ObligationDirective;
 import org.praxisplatform.authz.contracts.envelope.PolicyUnitContributionTrace;
 import org.praxisplatform.authz.contracts.envelope.ProviderEvaluationEnvelope;
 import org.praxisplatform.authz.contracts.envelope.RuleEffect;
+import org.praxisplatform.authz.contracts.obligation.DefaultObligationHandlerRegistry;
 import org.praxisplatform.authz.enforcement.context.ContextCompositionCoordinator;
 import org.praxisplatform.authz.enforcement.context.TrustedFactSource;
 import org.praxisplatform.authz.enforcement.fielduse.FieldUseQueryGuard;
@@ -85,71 +85,71 @@ class MaskingObligationAnd15StepPipelineTest {
 
         Map<String, Object> managedEntityOrDto = new LinkedHashMap<>();
         managedEntityOrDto.put("id", 42L);
-        managedEntityOrDto.put("cidCodigo", "J11.0");
-        managedEntityOrDto.put("cpfServidor", "123.456.789-01");
-        managedEntityOrDto.put("observacaoMedica", "Laudo pericial detalhado");
+        managedEntityOrDto.put("medicalCode", "J11.0");
+        managedEntityOrDto.put("employeeTaxId", "123.456.789-01");
+        managedEntityOrDto.put("medicalNotes", "Detailed medical assessment notes");
 
         List<DtoFieldSchemaMetadata> schemas = List.of(
-                new DtoFieldSchemaMetadata("cidCodigo", "ergon.afastamentos.cid_codigo", FactValueType.STRING, false),
-                new DtoFieldSchemaMetadata("cpfServidor", "ergon.servidores.cpf", FactValueType.STRING, false),
-                new DtoFieldSchemaMetadata("observacaoMedica", "ergon.afastamentos.observacao_medica", FactValueType.STRING, true)
+                new DtoFieldSchemaMetadata("medicalCode", "hr.leave_requests.medical_code", FactValueType.STRING, false),
+                new DtoFieldSchemaMetadata("employeeTaxId", "hr.employees.tax_id", FactValueType.STRING, false),
+                new DtoFieldSchemaMetadata("medicalNotes", "hr.leave_requests.medical_notes", FactValueType.STRING, true)
         );
 
         DetachedDtoMaskingResult result = processor.projectAndMask(
                 managedEntityOrDto,
                 schemas,
-                Set.of("ergon.afastamentos.observacao_medica"), // FIELD_USE(VALUE)=DENY -> omitted completely!
+                Set.of("hr.leave_requests.medical_notes"), // FIELD_USE(VALUE)=DENY -> omitted completely!
                 List.of(
-                        new MaskDirective("ergon.afastamentos.cid_codigo", "REDACT_CONSTANT", Map.of("replacement", "***CID-RESTRITO***")),
-                        new MaskDirective("ergon.servidores.cpf", "CPF_CNPJ_PARTIAL", Map.of()),
-                        new MaskDirective("ergon.afastamentos.observacao_medica", "PARTIAL_MASK", Map.of("visiblePrefix", 2, "visibleSuffix", 2))
+                        new MaskDirective("hr.leave_requests.medical_code", "REDACT_CONSTANT", Map.of("replacement", "***RESTRICTED-CODE***")),
+                        new MaskDirective("hr.employees.tax_id", "CPF_CNPJ_PARTIAL", Map.of()),
+                        new MaskDirective("hr.leave_requests.medical_notes", "PARTIAL_MASK", Map.of("visiblePrefix", 2, "visibleSuffix", 2))
                 )
         );
 
         // Source map/entity is untouched (P15 / P40: no dirty-checking corruption!)
-        assertEquals("J11.0", managedEntityOrDto.get("cidCodigo"));
-        assertEquals("123.456.789-01", managedEntityOrDto.get("cpfServidor"));
-        assertEquals("Laudo pericial detalhado", managedEntityOrDto.get("observacaoMedica"));
+        assertEquals("J11.0", managedEntityOrDto.get("medicalCode"));
+        assertEquals("123.456.789-01", managedEntityOrDto.get("employeeTaxId"));
+        assertEquals("Detailed medical assessment notes", managedEntityOrDto.get("medicalNotes"));
 
         // Detached projection has masked/omitted values
-        assertEquals("***CID-RESTRITO***", result.detachedProjection().get("cidCodigo"));
-        assertEquals("***.***.***-01", result.detachedProjection().get("cpfServidor"));
-        assertFalse(result.detachedProjection().containsKey("observacaoMedica"));
-        assertEquals("OMIT_BY_FIELD_USE_DENY", result.appliedStrategiesByAttributeId().get("ergon.afastamentos.observacao_medica"));
+        assertEquals("***RESTRICTED-CODE***", result.detachedProjection().get("medicalCode"));
+        assertEquals("***.***.***-01", result.detachedProjection().get("employeeTaxId"));
+        assertFalse(result.detachedProjection().containsKey("medicalNotes"));
+        assertEquals("OMIT_BY_FIELD_USE_DENY", result.appliedStrategiesByAttributeId().get("hr.leave_requests.medical_notes"));
 
-        // NULLIFY on non-nullable cidCodigo must throw MaskingConflictException (ENF-MSK-005)
+        // NULLIFY on non-nullable medicalCode must throw MaskingConflictException (ENF-MSK-005)
         assertThrows(MaskingConflictException.class, () ->
                 processor.projectAndMask(
                         managedEntityOrDto,
                         schemas,
                         Set.of(),
-                        List.of(new MaskDirective("ergon.afastamentos.cid_codigo", "NULLIFY", Map.of()))
+                        List.of(new MaskDirective("hr.leave_requests.medical_code", "NULLIFY", Map.of()))
                 )
         );
 
         // P2-R06 (P12 / P25 / P36): Nested map & collection masking + per-row page masking without cross-row leakage
         Map<String, Object> nestedRecord = new LinkedHashMap<>();
         nestedRecord.put("id", 99L);
-        nestedRecord.put("servidor", new LinkedHashMap<>(Map.of("cpf", "111.222.333-44", "nome", "Maria")));
-        nestedRecord.put("dependentes", List.of(
-                new LinkedHashMap<>(Map.of("nome", "Filho 1", "cpf", "555.666.777-88"))
+        nestedRecord.put("employee", new LinkedHashMap<>(Map.of("taxId", "111.222.333-44", "name", "Maria")));
+        nestedRecord.put("dependents", List.of(
+                new LinkedHashMap<>(Map.of("name", "Dependent 1", "taxId", "555.666.777-88"))
         ));
         List<DtoFieldSchemaMetadata> nestedSchemas = List.of(
-                new DtoFieldSchemaMetadata("servidor.cpf", "ergon.servidores.cpf", FactValueType.STRING, false),
-                new DtoFieldSchemaMetadata("dependentes[].cpf", "ergon.dependentes.cpf", FactValueType.STRING, false)
+                new DtoFieldSchemaMetadata("employee.taxId", "hr.employees.tax_id", FactValueType.STRING, false),
+                new DtoFieldSchemaMetadata("dependents[].taxId", "hr.dependents.tax_id", FactValueType.STRING, false)
         );
         DetachedDtoMaskingResult nestedMasked = processor.projectAndMask(
                 nestedRecord,
                 nestedSchemas,
-                Set.of("ergon.dependentes.cpf"),
-                List.of(new MaskDirective("ergon.servidores.cpf", "CPF_CNPJ_PARTIAL", Map.of()))
+                Set.of("hr.dependents.tax_id"),
+                List.of(new MaskDirective("hr.employees.tax_id", "CPF_CNPJ_PARTIAL", Map.of()))
         );
         @SuppressWarnings("unchecked")
-        Map<String, Object> maskedServidor = (Map<String, Object>) nestedMasked.detachedProjection().get("servidor");
-        assertEquals("***.***.***-44", maskedServidor.get("cpf"));
+        Map<String, Object> maskedEmployee = (Map<String, Object>) nestedMasked.detachedProjection().get("employee");
+        assertEquals("***.***.***-44", maskedEmployee.get("taxId"));
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> maskedDeps = (List<Map<String, Object>>) nestedMasked.detachedProjection().get("dependentes");
-        assertFalse(maskedDeps.get(0).containsKey("cpf"));
+        List<Map<String, Object>> maskedDeps = (List<Map<String, Object>>) nestedMasked.detachedProjection().get("dependents");
+        assertFalse(maskedDeps.get(0).containsKey("taxId"));
 
         // P23 (P2-R05): Monotonic step guard rejects out-of-order pipeline steps fail-closed
         assertThrows(IllegalStateException.class, () -> {
@@ -163,7 +163,7 @@ class MaskingObligationAnd15StepPipelineTest {
     void r11_p22_pipelineEnforcesStep11BeforeStep12AndRevokesPermitWhenAuditOutboxFails() {
         String digest = CanonicalDigestCalculator.computeDigest(DigestDomainKind.DEPENDENCY_MANIFEST_DIGEST, "dp");
         DecisionPointIdentity dpId = DecisionPointIdentity.resourceOperation(
-                "praxis-ergon-showcase", "human-resources.afastamentos", "atualizarSubstituto");
+                "workforce-service", "human-resources.leave-requests", "assignSubstitute");
         RuntimeEnforcementBinding binding = new RuntimeEnforcementBinding(
                 RuntimeEnforcementBinding.SCHEMA_VERSION_V1,
                 "bind-patch",
@@ -219,7 +219,7 @@ class MaskingObligationAnd15StepPipelineTest {
                 "fc-1",
                 "1.0.0",
                 digest,
-                "human-resources.afastamentos",
+                "human-resources.leave-requests",
                 Map.of("subject.principalId", subjectId)
         );
         ContextCompositionProfile profile = new ContextCompositionProfile(
@@ -254,7 +254,7 @@ class MaskingObligationAnd15StepPipelineTest {
 
         InMemoryTransactionalAuditOutbox outbox = new InMemoryTransactionalAuditOutbox();
         ObligationBarrierCoordinator obligationCoordinator = new ObligationBarrierCoordinator(
-                new org.praxisplatform.authz.contracts.obligation.DefaultObligationHandlerRegistry(),
+                new DefaultObligationHandlerRegistry(),
                 outbox
         );
 
@@ -277,13 +277,13 @@ class MaskingObligationAnd15StepPipelineTest {
                         GateOutcome.ALLOW,
                         List.of(),
                         List.of(
-                                new FieldWriteEffectDirective("ergon.afastamentos.substituto_matricula", RuleEffect.ALLOW),
-                                new FieldWriteEffectDirective("ergon.afastamentos.cid_codigo", RuleEffect.DENY)
+                                new FieldWriteEffectDirective("hr.leave_requests.substitute_code", RuleEffect.ALLOW),
+                                new FieldWriteEffectDirective("hr.leave_requests.medical_code", RuleEffect.DENY)
                         ),
                         List.of(new MaskDirective(
-                                "ergon.afastamentos.cid_codigo",
+                                "hr.leave_requests.medical_code",
                                 "REDACT_CONSTANT",
-                                Map.of("replacement", "***CID-RESTRITO***"))),
+                                Map.of("replacement", "***RESTRICTED-CODE***"))),
                         List.of(
                                 new ObligationDirective(
                                         "REQUIRE_JUSTIFICATION",
@@ -294,7 +294,7 @@ class MaskingObligationAnd15StepPipelineTest {
                                         "DURABLE_AUDIT_EVIDENCE",
                                         "ALWAYS",
                                         "BEFORE_COMMIT_OUTBOX",
-                                        Map.of("auditCategory", "SUBSTITUTO_PATCH"))
+                                        Map.of("auditCategory", "SUBSTITUTE_PATCH"))
                         ),
                         List.of(),
                         List.of(new PolicyUnitContributionTrace(
@@ -327,7 +327,7 @@ class MaskingObligationAnd15StepPipelineTest {
                 true,
                 BatchAuthorizationMode.REJECT_ALL,
                 TransactionCardinality.SINGLE_ITEM,
-                List.of(new WriteFieldChange("/cidCodigo", "ergon.afastamentos.cid_codigo", WriteChangeKind.SET, "J11"))
+                List.of(new WriteFieldChange("/medicalCode", "hr.leave_requests.medical_code", WriteChangeKind.SET, "J11"))
         );
         assertThrows(FieldWriteViolationException.class, () ->
                 executor.executeTargetPipeline(
@@ -346,7 +346,7 @@ class MaskingObligationAnd15StepPipelineTest {
                         null,
                         false,
                         true,
-                        Map.of("justificationText", "Justificativa válida para teste"),
+                        Map.of("justificationText", "Valid justification for compliance test"),
                         () -> {
                             step12Ran.set(true);
                             return Map.of();
@@ -364,7 +364,7 @@ class MaskingObligationAnd15StepPipelineTest {
                 BatchAuthorizationMode.REJECT_ALL,
                 TransactionCardinality.SINGLE_ITEM,
                 List.of(new WriteFieldChange(
-                        "/substitutoMatricula", "ergon.afastamentos.substituto_matricula", WriteChangeKind.SET, "MAT-20499"))
+                        "/substituteCode", "hr.leave_requests.substitute_code", WriteChangeKind.SET, "EMP-20499"))
         );
         NormalizedEnforcementOutcome okOutcome = executor.executeTargetPipeline(
                 binding,
@@ -382,12 +382,12 @@ class MaskingObligationAnd15StepPipelineTest {
                 null,
                 false,
                 true,
-                Map.of("justificationText", "Substituição homologada pela chefia imediata"),
-                () -> Map.of("id", 77L, "substitutoMatricula", "MAT-20499", "cidCodigo", "J11.0"),
-                List.of(new DtoFieldSchemaMetadata("cidCodigo", "ergon.afastamentos.cid_codigo", FactValueType.STRING, false))
+                Map.of("justificationText", "Substitute assignment approved by department manager"),
+                () -> Map.of("id", 77L, "substituteCode", "EMP-20499", "medicalCode", "J11.0"),
+                List.of(new DtoFieldSchemaMetadata("medicalCode", "hr.leave_requests.medical_code", FactValueType.STRING, false))
         );
         assertTrue(okOutcome.isPermitted());
-        assertEquals("***CID-RESTRITO***", okOutcome.maskingResult().detachedProjection().get("cidCodigo"));
+        assertEquals("***RESTRICTED-CODE***", okOutcome.maskingResult().detachedProjection().get("medicalCode"));
         assertEquals(2, outbox.listEntries().size());
         int step11Idx = okOutcome.executedSteps().indexOf(EnforcementPipelineStep.STEP_11_ENFORCE_PRE_MUTATION_ACCESS_AND_FIELD_WRITE);
         int step12Idx = okOutcome.executedSteps().indexOf(EnforcementPipelineStep.STEP_12_EXECUTE_SERVER_HYDRATION_AND_BUSINESS_RULES);
@@ -413,9 +413,9 @@ class MaskingObligationAnd15StepPipelineTest {
                 null,
                 false,
                 true,
-                Map.of("justificationText", "Substituição homologada pela chefia imediata"),
-                () -> Map.of("id", 77L, "substitutoMatricula", "MAT-20499", "cidCodigo", "J11.0"),
-                List.of(new DtoFieldSchemaMetadata("cidCodigo", "ergon.afastamentos.cid_codigo", FactValueType.STRING, false))
+                Map.of("justificationText", "Substitute assignment approved by department manager"),
+                () -> Map.of("id", 77L, "substituteCode", "EMP-20499", "medicalCode", "J11.0"),
+                List.of(new DtoFieldSchemaMetadata("medicalCode", "hr.leave_requests.medical_code", FactValueType.STRING, false))
         );
         assertEquals(EnforcementDisposition.DENY, failedOutboxOutcome.finalDisposition());
         assertNull(failedOutboxOutcome.maskingResult());
@@ -441,9 +441,9 @@ class MaskingObligationAnd15StepPipelineTest {
                 null,
                 false,
                 true,
-                Map.of("justificationText", "Substituição homologada pela chefia imediata"),
-                () -> Map.of("id", 77L, "substitutoMatricula", "MAT-20499", "cidCodigo", "J11.0"),
-                List.of(new DtoFieldSchemaMetadata("cidCodigo", "ergon.afastamentos.cid_codigo", FactValueType.STRING, false))
+                Map.of("justificationText", "Substitute assignment approved by department manager"),
+                () -> Map.of("id", 77L, "substituteCode", "EMP-20499", "medicalCode", "J11.0"),
+                List.of(new DtoFieldSchemaMetadata("medicalCode", "hr.leave_requests.medical_code", FactValueType.STRING, false))
         );
         assertEquals(fixedInstant, deterministicTimeOutcome.evidence().decidedAt());
     }

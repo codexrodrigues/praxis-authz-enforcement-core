@@ -50,7 +50,7 @@ public final class DtoWriteIntentExtractor {
      * @param batchMode batch authorization mode
      * @param cardinality transaction cardinality
      * @param rawJsonPayload raw JSON object payload sent by the caller before server hydration
-     * @param attributeIdByWirePath mapping of JSON Pointer wire paths (e.g. {@code /substitutoMatricula}) to canonical {@code attributeId}
+     * @param attributeIdByWirePath mapping of JSON Pointer wire paths (e.g. {@code /substituteCode}) to canonical {@code attributeId}
      * @return extracted {@link WriteIntent}
      */
     public WriteIntent extractFromJson(

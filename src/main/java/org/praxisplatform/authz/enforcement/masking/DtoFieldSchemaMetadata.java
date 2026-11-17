@@ -7,8 +7,8 @@ import org.praxisplatform.authz.contracts.context.FactValueType;
  * Schema metadata for a single field on a response or export DTO used to validate and apply
  * server-side security masking ({@code CC09}, {@code ENF-MSK-004..008}).
  *
- * @param wireFieldName JSON property name on the DTO (e.g. {@code cidCodigo})
- * @param attributeId canonical {@code @DomainLineage.attributeId} (e.g. {@code workforce.afastamentos.cid_codigo})
+ * @param wireFieldName JSON property name on the DTO (e.g. {@code medicalCode})
+ * @param attributeId canonical {@code @DomainLineage.attributeId} (e.g. {@code hr.leave_requests.medical_code})
  * @param valueType field value type
  * @param nullable whether the DTO field is annotated with {@code @Schema(nullable = true)}
  */

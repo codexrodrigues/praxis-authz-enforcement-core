@@ -50,22 +50,30 @@ import org.praxisplatform.authz.enforcement.writeintent.FieldWriteViolationExcep
 class ContextAndWriteIntentEnforcementTest {
 
     @Test
+    @SuppressWarnings("deprecation")
     void p01_p42_untrustedRequestHeadersCannotSpoofTenantRoleOrWorkflowStage() {
         Map<String, ResolvedFactValue> authFacts = Map.of(
-                "subject.tenantId", ResolvedFactValue.present("subject.tenantId", "gov-sp"),
-                "subject.organizationUnitIds", ResolvedFactValue.present("subject.organizationUnitIds", Set.of(101L, 102L))
+                "subject.tenantId", ResolvedFactValue.present("subject.tenantId", "tenant-alpha"),
+                "subject.organizationUnitIds", ResolvedFactValue.present("subject.organizationUnitIds", Set.of(101L, 102L)),
+                "subject.delegatedDestinationOrgIds", ResolvedFactValue.present("subject.delegatedDestinationOrgIds", Set.of(201L, 202L)),
+                "subject.delegatedCessionarioOrgIds", ResolvedFactValue.present("subject.delegatedCessionarioOrgIds", Set.of(301L))
         );
 
-        // Matching header within authoritative grant is accepted
+        // Matching headers within authoritative grant are accepted
         UntrustedRequestHeaderGuard.assertNoAuthoritySpoofingHeaders(
-                Map.of("X-Tenant-Id", "gov-sp", "X-Org-Id", "101"),
+                Map.of(
+                        "X-Tenant-Id", "tenant-alpha",
+                        "X-Org-Id", "101",
+                        "X-Delegated-Destination-Org-Ids", "201, 202",
+                        "X-Delegated-Cessionario-Org-Ids", "301"
+                ),
                 authFacts
         );
 
-        // P01: Header attempting to switch tenant to gov-rj -> rejected fail-closed
+        // P01: Header attempting to switch tenant to tenant-beta -> rejected fail-closed
         assertThrows(UntrustedHeaderSpoofingException.class, () ->
                 UntrustedRequestHeaderGuard.assertNoAuthoritySpoofingHeaders(
-                        Map.of("X-Tenant-Id", "gov-rj"),
+                        Map.of("X-Tenant-Id", "tenant-beta"),
                         authFacts
                 )
         );
@@ -78,15 +86,31 @@ class ContextAndWriteIntentEnforcementTest {
                 )
         );
 
+        // P01: Neutral delegated destination header outside grant -> rejected fail-closed
+        assertThrows(UntrustedHeaderSpoofingException.class, () ->
+                UntrustedRequestHeaderGuard.assertNoAuthoritySpoofingHeaders(
+                        Map.of("X-Delegated-Destination-Org-Ids", "201, 999"),
+                        authFacts
+                )
+        );
+
+        // P01: Legacy delegated org header outside grant -> still rejected fail-closed
+        assertThrows(UntrustedHeaderSpoofingException.class, () ->
+                UntrustedRequestHeaderGuard.assertNoAuthoritySpoofingHeaders(
+                        Map.of("X-Delegated-Cessionario-Org-Ids", "999"),
+                        authFacts
+                )
+        );
+
         // P42: Header attempting to inject workflow stage -> rejected fail-closed even if stage is in facts!
         Map<String, ResolvedFactValue> authFactsWithStage = Map.of(
-                "subject.tenantId", ResolvedFactValue.present("subject.tenantId", "gov-sp"),
+                "subject.tenantId", ResolvedFactValue.present("subject.tenantId", "tenant-alpha"),
                 "subject.organizationUnitIds", ResolvedFactValue.present("subject.organizationUnitIds", Set.of(101L, 102L)),
-                "transition.workflowStage", ResolvedFactValue.present("transition.workflowStage", "HOMOLOGADO")
+                "transition.workflowStage", ResolvedFactValue.present("transition.workflowStage", "APPROVED")
         );
         assertThrows(UntrustedHeaderSpoofingException.class, () ->
                 UntrustedRequestHeaderGuard.assertNoAuthoritySpoofingHeaders(
-                        Map.of("X-Workflow-Stage", "HOMOLOGADO"),
+                        Map.of("X-Workflow-Stage", "APPROVED"),
                         authFactsWithStage
                 )
         );
@@ -132,7 +156,7 @@ class ContextAndWriteIntentEnforcementTest {
                 null
         );
         FactDescriptor enrichedOrg = new FactDescriptor(
-                "subject.delegatedCessionarioOrgIds",
+                "subject.delegatedDestinationOrgIds",
                 FactSlotNamespace.SUBJECT,
                 FactValueType.INT64,
                 FactCardinality.SET,
@@ -148,13 +172,13 @@ class ContextAndWriteIntentEnforcementTest {
                 "HUMAN_RESOURCES_ADMINISTRATION",
                 null
         );
-        FactDescriptor optionalObs = new FactDescriptor(
-                "resource.observacao",
+        FactDescriptor optionalNotes = new FactDescriptor(
+                "resource.notes",
                 FactSlotNamespace.RESOURCE,
                 FactValueType.STRING,
                 FactCardinality.SCALAR,
                 FactPresenceModel.MAY_BE_ABSENT,
-                "ergon.afastamentos.observacao",
+                "hr.leave_requests.notes",
                 null,
                 FactResolutionStage.EXTRACT,
                 Set.of(ContextEvaluationPhase.TARGET),
@@ -169,25 +193,25 @@ class ContextAndWriteIntentEnforcementTest {
         String fcDigest = CanonicalDigestCalculator.computeDigest(DigestDomainKind.DEPENDENCY_MANIFEST_DIGEST, "fc");
         FactContract contract = new FactContract(
                 FactContract.SCHEMA_VERSION_V1,
-                "fc-afastamentos",
+                "fc-leave-requests",
                 "1.0.0",
                 fcDigest,
-                "human-resources.afastamentos",
+                "human-resources.leave-requests",
                 Map.of(
                         subjectId.factPath(), subjectId,
                         enrichedOrg.factPath(), enrichedOrg,
-                        optionalObs.factPath(), optionalObs
+                        optionalNotes.factPath(), optionalNotes
                 )
         );
         ContextCompositionProfile profile = new ContextCompositionProfile(
                 ContextCompositionProfile.SCHEMA_VERSION_V1,
                 "prof-target",
-                "resource-operation/human-resources.afastamentos/findById",
+                "resource-operation/human-resources.leave-requests/findById",
                 ContextEvaluationPhase.TARGET,
                 contract.factContractId(),
                 contract.factContractDigest(),
-                Set.of("subject.principalId", "subject.delegatedCessionarioOrgIds"),
-                Set.of("resource.observacao"),
+                Set.of("subject.principalId", "subject.delegatedDestinationOrgIds"),
+                Set.of("resource.notes"),
                 200L,
                 true
         );
@@ -208,7 +232,7 @@ class ContextAndWriteIntentEnforcementTest {
             }
         };
 
-        // Failing enricher throws RuntimeException -> P04 requires UNAVAILABLE(SOURCE_ERROR), never ABSENT!
+        // Failing enricher throws RuntimeException -> P04 requires UNAVAILABLE(SOURCE_ERROR/TIMEOUT), never ABSENT!
         TrustedFactSource failingEnrichSource = new TrustedFactSource() {
             @Override
             public FactResolutionStage stage() {
@@ -221,7 +245,7 @@ class ContextAndWriteIntentEnforcementTest {
                     Map<String, FactDescriptor> descriptorsToResolve,
                     Map<String, ResolvedFactValue> alreadyResolved
             ) {
-                throw new IllegalStateException("Oracle connection pool timeout");
+                throw new IllegalStateException("Directory lookup pool timeout");
             }
         };
 
@@ -235,12 +259,12 @@ class ContextAndWriteIntentEnforcementTest {
         );
 
         assertEquals(FactResolutionStatus.PRESENT, snap.findFact("subject.principalId").orElseThrow().status());
-        assertEquals(FactResolutionStatus.UNAVAILABLE, snap.findFact("subject.delegatedCessionarioOrgIds").orElseThrow().status());
+        assertEquals(FactResolutionStatus.UNAVAILABLE, snap.findFact("subject.delegatedDestinationOrgIds").orElseThrow().status());
         assertEquals(
                 FactUnavailableCause.SOURCE_TIMEOUT,
-                snap.findFact("subject.delegatedCessionarioOrgIds").orElseThrow().unavailableCause()
+                snap.findFact("subject.delegatedDestinationOrgIds").orElseThrow().unavailableCause()
         );
-        assertEquals(FactResolutionStatus.ABSENT, snap.findFact("resource.observacao").orElseThrow().status());
+        assertEquals(FactResolutionStatus.ABSENT, snap.findFact("resource.notes").orElseThrow().status());
 
         // P02: ScopedExecutionContextHolder cleans up even when an exception unwinds the stack
         assertTrue(ScopedExecutionContextHolder.current().isEmpty());
@@ -255,24 +279,25 @@ class ContextAndWriteIntentEnforcementTest {
     }
 
     @Test
+    @SuppressWarnings("deprecation")
     void p16_p17_dtoWriteIntentExtractorPreservesFalsyValuesAndDualScopeEnforcesCustody() {
         DtoWriteIntentExtractor extractor = new DtoWriteIntentExtractor();
         Map<String, String> wireMap = Map.of(
-                "/substitutoMatricula", "ergon.afastamentos.substituto_matricula",
-                "/observacao", "ergon.afastamentos.observacao",
-                "/diasDesconto", "ergon.afastamentos.dias_desconto",
-                "/remunerado", "ergon.afastamentos.remunerado",
-                "/dataInicio", "ergon.afastamentos.data_inicio"
+                "/substituteCode", "hr.leave_requests.substitute_code",
+                "/notes", "hr.leave_requests.notes",
+                "/discountDays", "hr.leave_requests.discount_days",
+                "/paid", "hr.leave_requests.paid",
+                "/startDate", "hr.leave_requests.start_date"
         );
 
-        // Note: /dataInicio is omitted in this PATCH payload; /observacao is explicit null;
-        // /diasDesconto is 0; /remunerado is false; /substitutoMatricula is ""
+        // Note: /startDate is omitted in this PATCH payload; /notes is explicit null;
+        // /discountDays is 0; /paid is false; /substituteCode is ""
         String rawPatchJson = """
                 {
-                  "substitutoMatricula": "",
-                  "observacao": null,
-                  "diasDesconto": 0,
-                  "remunerado": false
+                  "substituteCode": "",
+                  "notes": null,
+                  "discountDays": 0,
+                  "paid": false
                 }
                 """;
 
@@ -286,59 +311,102 @@ class ContextAndWriteIntentEnforcementTest {
         );
 
         assertEquals(4, intent.changes().size());
-        assertFalse(intent.modifiedAttributeIds().contains("ergon.afastamentos.data_inicio"));
+        assertFalse(intent.modifiedAttributeIds().contains("hr.leave_requests.start_date"));
 
         Map<String, WriteFieldChange> byAttr = intent.changes().stream()
                 .collect(java.util.stream.Collectors.toMap(WriteFieldChange::attributeId, c -> c));
-        assertEquals(WriteChangeKind.SET, byAttr.get("ergon.afastamentos.substituto_matricula").changeKind());
-        assertEquals("", byAttr.get("ergon.afastamentos.substituto_matricula").declaredValueProjection());
-        assertEquals(WriteChangeKind.CLEAR_EXPLICIT_NULL, byAttr.get("ergon.afastamentos.observacao").changeKind());
-        assertEquals(WriteChangeKind.SET, byAttr.get("ergon.afastamentos.dias_desconto").changeKind());
-        assertEquals(0, byAttr.get("ergon.afastamentos.dias_desconto").declaredValueProjection());
-        assertEquals(WriteChangeKind.SET, byAttr.get("ergon.afastamentos.remunerado").changeKind());
-        assertEquals(false, byAttr.get("ergon.afastamentos.remunerado").declaredValueProjection());
+        assertEquals(WriteChangeKind.SET, byAttr.get("hr.leave_requests.substitute_code").changeKind());
+        assertEquals("", byAttr.get("hr.leave_requests.substitute_code").declaredValueProjection());
+        assertEquals(WriteChangeKind.CLEAR_EXPLICIT_NULL, byAttr.get("hr.leave_requests.notes").changeKind());
+        assertEquals(WriteChangeKind.SET, byAttr.get("hr.leave_requests.discount_days").changeKind());
+        assertEquals(0, byAttr.get("hr.leave_requests.discount_days").declaredValueProjection());
+        assertEquals(WriteChangeKind.SET, byAttr.get("hr.leave_requests.paid").changeKind());
+        assertEquals(false, byAttr.get("hr.leave_requests.paid").declaredValueProjection());
 
-        // P17 (R-07): DualScopeDelegationSpec custody enforcement
-        DualScopeDelegationSpec dualScope = new DualScopeDelegationSpec(
-                "CEDENTE_CESSIONARIO_SPLIT",
-                "resource.lotacaoSetorId",
-                "resource.orgaoCessionarioId",
-                Set.of("ergon.afastamentos.data_inicio", "ergon.afastamentos.remunerado"),
-                Set.of("ergon.afastamentos.substituto_matricula", "ergon.afastamentos.observacao")
+        // P17 (R-07): Neutral DualScopeDelegationSpec custody enforcement
+        DualScopeDelegationSpec dualScope = DualScopeDelegationSpec.ofOriginAndDestination(
+                DualScopeDelegationSpec.ORIGIN_DESTINATION_SPLIT,
+                "resource.originOrgId",
+                "resource.destinationOrgId",
+                Set.of("hr.leave_requests.start_date", "hr.leave_requests.paid"),
+                Set.of("hr.leave_requests.substitute_code", "hr.leave_requests.notes")
         );
 
         FieldWriteAuthorizer authorizer = new FieldWriteAuthorizer();
-        WriteIntent cessionarioValidPatch = extractor.extractFromJson(
+        WriteIntent destinationValidPatch = extractor.extractFromJson(
                 "UPDATE_PARTIAL",
                 true,
                 BatchAuthorizationMode.REJECT_ALL,
                 TransactionCardinality.SINGLE_ITEM,
-                "{\"substitutoMatricula\": \"MAT-20499\", \"observacao\": null}",
+                "{\"substituteCode\": \"EMP-20499\", \"notes\": null}",
                 wireMap
         );
-        // Cessionario can modify substituto_matricula and observacao
-        authorizer.enforceDualScopeCustody(cessionarioValidPatch, dualScope, false, true);
+        WriteIntent originValidPatch = extractor.extractFromJson(
+                "UPDATE_PARTIAL",
+                true,
+                BatchAuthorizationMode.REJECT_ALL,
+                TransactionCardinality.SINGLE_ITEM,
+                "{\"startDate\": \"2026-11-20\", \"paid\": false}",
+                wireMap
+        );
 
-        // Cessionario attempting to modify cedente-owned data_inicio or remunerado -> rejected!
+        // Destination can modify substitute_code and notes
+        authorizer.enforceDualScopeCustody(destinationValidPatch, dualScope, false, true);
+        // Origin can modify start_date and paid
+        authorizer.enforceDualScopeCustody(originValidPatch, dualScope, true, false);
+
+        // Destination attempting to modify origin-owned start_date or paid (via ungranted paid/discountDays) -> rejected!
         assertThrows(FieldWriteViolationException.class, () ->
                 authorizer.enforceDualScopeCustody(intent, dualScope, false, true)
         );
 
-        // P2-R4: Caller matching neither cedente nor cessionario custody is rejected fail-closed!
+        // P2-R4: Caller matching neither origin nor destination custody is rejected fail-closed!
         assertThrows(FieldWriteViolationException.class, () ->
-                authorizer.enforceDualScopeCustody(cessionarioValidPatch, dualScope, false, false)
+                authorizer.enforceDualScopeCustody(destinationValidPatch, dualScope, false, false)
         );
 
-        // P2-R4: Mode READ_ONLY_CESSIONARIO forbids mutations by a caller holding only cessionario custody!
-        DualScopeDelegationSpec readOnlyCessionarioSpec = new DualScopeDelegationSpec(
-                "READ_ONLY_CESSIONARIO",
-                "resource.lotacaoSetorId",
-                "resource.orgaoCessionarioId",
-                Set.of("ergon.afastamentos.data_inicio", "ergon.afastamentos.remunerado"),
-                Set.of("ergon.afastamentos.substituto_matricula")
+        // P2-R4: Modes ORIGIN_ONLY_WRITE and READ_ONLY_DESTINATION forbid mutations by a caller holding only destination custody!
+        DualScopeDelegationSpec originOnlySpec = DualScopeDelegationSpec.ofOriginAndDestination(
+                DualScopeDelegationSpec.ORIGIN_ONLY_WRITE,
+                "resource.originOrgId",
+                "resource.destinationOrgId",
+                Set.of("hr.leave_requests.start_date", "hr.leave_requests.paid"),
+                Set.of("hr.leave_requests.substitute_code")
+        );
+        authorizer.enforceDualScopeCustody(originValidPatch, originOnlySpec, true, false);
+        assertThrows(FieldWriteViolationException.class, () ->
+                authorizer.enforceDualScopeCustody(destinationValidPatch, originOnlySpec, false, true)
+        );
+
+        DualScopeDelegationSpec readOnlyDestinationSpec = DualScopeDelegationSpec.ofOriginAndDestination(
+                DualScopeDelegationSpec.READ_ONLY_DESTINATION,
+                "resource.originOrgId",
+                "resource.destinationOrgId",
+                Set.of("hr.leave_requests.start_date", "hr.leave_requests.paid"),
+                Set.of("hr.leave_requests.substitute_code")
         );
         assertThrows(FieldWriteViolationException.class, () ->
-                authorizer.enforceDualScopeCustody(cessionarioValidPatch, readOnlyCessionarioSpec, false, true)
+                authorizer.enforceDualScopeCustody(destinationValidPatch, readOnlyDestinationSpec, false, true)
+        );
+
+        // Backward compatibility: legacy split mode aliases still enforce identically
+        DualScopeDelegationSpec legacySplitSpec = new DualScopeDelegationSpec(
+                DualScopeDelegationSpec.CEDENTE_CESSIONARIO_SPLIT,
+                "resource.originOrgId",
+                "resource.destinationOrgId",
+                Set.of("hr.leave_requests.start_date", "hr.leave_requests.paid"),
+                Set.of("hr.leave_requests.substitute_code", "hr.leave_requests.notes")
+        );
+        authorizer.enforceDualScopeCustody(destinationValidPatch, legacySplitSpec, false, true);
+        DualScopeDelegationSpec legacyReadOnlySpec = new DualScopeDelegationSpec(
+                DualScopeDelegationSpec.READ_ONLY_CESSIONARIO,
+                "resource.originOrgId",
+                "resource.destinationOrgId",
+                Set.of("hr.leave_requests.start_date", "hr.leave_requests.paid"),
+                Set.of("hr.leave_requests.substitute_code")
+        );
+        assertThrows(FieldWriteViolationException.class, () ->
+                authorizer.enforceDualScopeCustody(destinationValidPatch, legacyReadOnlySpec, false, true)
         );
 
         // P2-R03 (P13 / P45): Unmapped business wire field in JSON payload is rejected fail-closed!
@@ -348,7 +416,7 @@ class ContextAndWriteIntentEnforcementTest {
                         true,
                         BatchAuthorizationMode.REJECT_ALL,
                         TransactionCardinality.SINGLE_ITEM,
-                        "{\"substitutoMatricula\": \"MAT-20499\", \"salarioOculto\": 99999}",
+                        "{\"substituteCode\": \"EMP-20499\", \"hiddenSalary\": 99999}",
                         wireMap
                 )
         );
@@ -359,14 +427,14 @@ class ContextAndWriteIntentEnforcementTest {
                 false,
                 BatchAuthorizationMode.REJECT_ALL,
                 TransactionCardinality.SINGLE_ITEM,
-                "{\"substitutoMatricula\": \"MAT-20499\", \"observacao\": \"OK\"}",
+                "{\"substituteCode\": \"EMP-20499\", \"notes\": \"OK\"}",
                 wireMap
         );
         Map<String, WriteFieldChange> putByAttr = fullPutIntent.changes().stream()
                 .collect(java.util.stream.Collectors.toMap(WriteFieldChange::attributeId, c -> c));
-        assertEquals(WriteChangeKind.REMOVE, putByAttr.get("ergon.afastamentos.data_inicio").changeKind());
-        assertEquals(WriteChangeKind.REMOVE, putByAttr.get("ergon.afastamentos.remunerado").changeKind());
-        // Cessionario attempting a full PUT that omits cedente-owned fields (which would clear them!) is denied!
+        assertEquals(WriteChangeKind.REMOVE, putByAttr.get("hr.leave_requests.start_date").changeKind());
+        assertEquals(WriteChangeKind.REMOVE, putByAttr.get("hr.leave_requests.paid").changeKind());
+        // Destination attempting a full PUT that omits origin-owned fields (which would clear them!) is denied!
         assertThrows(FieldWriteViolationException.class, () ->
                 authorizer.enforceDualScopeCustody(fullPutIntent, dualScope, false, true)
         );

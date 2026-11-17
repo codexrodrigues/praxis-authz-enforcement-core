@@ -99,8 +99,8 @@ public final class EnforcementPipelineExecutor {
      * @param requestedQueryFieldUses optional query field uses checked at {@code STEP_03}
      * @param writeIntent optional pre-hydration write intent checked at {@code STEP_11}
      * @param dualScopeSpec optional dual-scope custody specification checked at {@code STEP_11}
-     * @param callerMatchesCedenteScope whether caller holds origin/cedente custody
-     * @param callerMatchesCessionarioScope whether caller holds delegated/cessionario custody
+     * @param callerMatchesOriginScope whether caller holds origin custody
+     * @param callerMatchesDestinationScope whether caller holds delegated destination custody
      * @param obligationExecutionContext execution context for MFA/justification/outbox/watermark handlers
      * @param step12HydrationAndBusinessRulesSupplier callback executing {@code hydrate*}, {@code PraxisRulesEngine}, and persistence at {@code STEP_12}
      * @param responseDtoFieldSchemas schema metadata for masking the detached response DTO at {@code STEP_14}
@@ -120,8 +120,8 @@ public final class EnforcementPipelineExecutor {
             Map<FieldUseCategory, Set<String>> requestedQueryFieldUses,
             WriteIntent writeIntent,
             DualScopeDelegationSpec dualScopeSpec,
-            boolean callerMatchesCedenteScope,
-            boolean callerMatchesCessionarioScope,
+            boolean callerMatchesOriginScope,
+            boolean callerMatchesDestinationScope,
             Map<String, Object> obligationExecutionContext,
             Supplier<Object> step12HydrationAndBusinessRulesSupplier,
             Collection<DtoFieldSchemaMetadata> responseDtoFieldSchemas
@@ -196,7 +196,7 @@ public final class EnforcementPipelineExecutor {
                 try {
                     if (dualScopeSpec != null) {
                         fieldWriteAuthorizer.enforceDualScopeCustody(
-                                writeIntent, dualScopeSpec, callerMatchesCedenteScope, callerMatchesCessionarioScope);
+                                writeIntent, dualScopeSpec, callerMatchesOriginScope, callerMatchesDestinationScope);
                     }
                     if (!writeIntent.changes().isEmpty() && !envelope.combinedFieldWriteEffects().isEmpty()) {
                         fieldWriteAuthorizer.enforceFieldWriteDirectives(

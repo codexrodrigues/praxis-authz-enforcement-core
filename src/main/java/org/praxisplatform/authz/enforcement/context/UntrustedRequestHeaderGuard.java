@@ -26,6 +26,7 @@ public final class UntrustedRequestHeaderGuard {
             Map.entry("x-org-id", "subject.organizationUnitIds"),
             Map.entry("x-setor-id", "subject.organizationUnitIds"),
             Map.entry("x-organization-unit-ids", "subject.organizationUnitIds"),
+            Map.entry("x-delegated-destination-org-ids", "subject.delegatedDestinationOrgIds"),
             Map.entry("x-delegated-cessionario-org-ids", "subject.delegatedCessionarioOrgIds"),
             Map.entry("x-principal-id", "subject.principalId"),
             Map.entry("x-user-id", "subject.principalId"),

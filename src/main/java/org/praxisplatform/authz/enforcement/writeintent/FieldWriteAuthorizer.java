@@ -64,51 +64,56 @@ public final class FieldWriteAuthorizer {
 
     /**
      * Enforces {@link DualScopeDelegationSpec} ({@code R-07}, {@code P17}): verifies that a caller acting
-     * under origin/cedente custody only mutates {@code cedenteEditableAttributeIds}, and a caller acting
-     * under delegated/cessionario custody only mutates {@code cessionarioEditableAttributeIds}.
+     * under origin custody only mutates {@link DualScopeDelegationSpec#originExclusiveWriteAttributes()},
+     * and a caller acting under delegated destination custody only mutates
+     * {@link DualScopeDelegationSpec#destinationAllowedWriteAttributes()} when the delegation mode
+     * permits destination writes.
+     *
+     * <p>Supports both neutral modes ({@link DualScopeDelegationSpec#ORIGIN_DESTINATION_SPLIT},
+     * {@link DualScopeDelegationSpec#ORIGIN_ONLY_WRITE},
+     * {@link DualScopeDelegationSpec#READ_ONLY_DESTINATION}) and legacy backward-compatible aliases
+     * ({@code CEDENTE_CESSIONARIO_SPLIT}, {@code CEDENTE_ONLY_WRITE}, {@code READ_ONLY_CESSIONARIO}).</p>
      *
      * @param writeIntent caller's pre-hydration write intent
      * @param dualScopeSpec dual-scope delegation specification
-     * @param callerMatchesCedenteScope whether the caller holds custody over the origin/cedente scope
-     * @param callerMatchesCessionarioScope whether the caller holds custody over the delegated/cessionario scope
+     * @param callerMatchesOriginScope whether the caller holds custody over the origin scope
+     * @param callerMatchesDestinationScope whether the caller holds custody over the delegated destination scope
      * @throws FieldWriteViolationException if any modified attribute falls outside the caller's custody partition
      */
     public void enforceDualScopeCustody(
             WriteIntent writeIntent,
             DualScopeDelegationSpec dualScopeSpec,
-            boolean callerMatchesCedenteScope,
-            boolean callerMatchesCessionarioScope
+            boolean callerMatchesOriginScope,
+            boolean callerMatchesDestinationScope
     ) {
         Objects.requireNonNull(writeIntent, "writeIntent is required");
         Objects.requireNonNull(dualScopeSpec, "dualScopeSpec is required");
 
-        if (!callerMatchesCedenteScope && !callerMatchesCessionarioScope) {
+        if (!callerMatchesOriginScope && !callerMatchesDestinationScope) {
             throw new FieldWriteViolationException(
                     writeIntent.modifiedAttributeIds().isEmpty()
                             ? Set.of("<dual-scope-custody>")
                             : writeIntent.modifiedAttributeIds(),
                     "AUTHZ_DUAL_SCOPE_NO_CUSTODY_MATCH:" + dualScopeSpec.mode(),
-                    "Caller matches neither origin/cedente nor delegated/cessionario custody scope");
+                    "Caller matches neither origin nor delegated destination custody scope");
         }
 
-        if (!callerMatchesCedenteScope
-                && ("CEDENTE_ONLY_WRITE".equals(dualScopeSpec.mode())
-                        || "READ_ONLY_CESSIONARIO".equals(dualScopeSpec.mode()))) {
+        if (!callerMatchesOriginScope && dualScopeSpec.forbidsDestinationOnlyWrites()) {
             throw new FieldWriteViolationException(
                     writeIntent.modifiedAttributeIds().isEmpty()
                             ? Set.of("<dual-scope-mode>")
                             : writeIntent.modifiedAttributeIds(),
-                    "AUTHZ_DUAL_SCOPE_MODE_FORBIDS_CESSIONARIO_WRITE:" + dualScopeSpec.mode(),
+                    "AUTHZ_DUAL_SCOPE_MODE_FORBIDS_DESTINATION_WRITE:" + dualScopeSpec.mode(),
                     "Dual-scope mode '" + dualScopeSpec.mode()
-                            + "' forbids mutations by a caller holding only delegated/cessionario custody");
+                            + "' forbids mutations by a caller holding only delegated destination custody");
         }
 
         Set<String> allowedEditable = new LinkedHashSet<>();
-        if (callerMatchesCedenteScope) {
-            allowedEditable.addAll(dualScopeSpec.cedenteExclusiveWriteAttributes());
+        if (callerMatchesOriginScope) {
+            allowedEditable.addAll(dualScopeSpec.originExclusiveWriteAttributes());
         }
-        if (callerMatchesCessionarioScope && "CEDENTE_CESSIONARIO_SPLIT".equals(dualScopeSpec.mode())) {
-            allowedEditable.addAll(dualScopeSpec.cessionarioAllowedWriteAttributes());
+        if (callerMatchesDestinationScope && dualScopeSpec.allowsDestinationWrites()) {
+            allowedEditable.addAll(dualScopeSpec.destinationAllowedWriteAttributes());
         }
 
         Set<String> forbidden = new LinkedHashSet<>();
